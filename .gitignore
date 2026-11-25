@@ -1,0 +1,5 @@
+# Hasil build PlatformIO (dibuat ulang otomatis saat Build)
+.pio/
+
+# Pengaturan VS Code pribadi
+.vscode/
