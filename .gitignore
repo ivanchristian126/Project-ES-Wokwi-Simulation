@@ -3,3 +3,6 @@
 
 # Pengaturan VS Code pribadi
 .vscode/
+
+# Sketch tes buzzer (Arduino IDE), hanya untuk cek hardware
+tes_buzzer/

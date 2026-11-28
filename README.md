@@ -1,6 +1,6 @@
 # FridgeGuard: Simulasi ESP32 di VS Code (Wokwi + PlatformIO)
 
-FridgeGuard adalah alat pemantau kulkas: mengukur **suhu & kelembapan** (sensor DHT22) dan mendeteksi **pintu terbuka/tertutup** (magnetic switch). Kalau pintu terbuka terlalu lama, LED berkedip sebagai peringatan. Datanya dikirim lewat internet dan bisa dilihat di dashboard web:
+FridgeGuard adalah alat pemantau kulkas: mengukur **suhu & kelembapan** (sensor DHT22) dan mendeteksi **pintu terbuka/tertutup** (magnetic switch). Kalau pintu terbuka terlalu lama, LED berkedip dan buzzer berbunyi sebagai peringatan. Datanya dikirim lewat internet dan bisa dilihat di dashboard web:
 
 **Dashboard:** https://ivanchristian126.github.io/fridge-guard/
 
@@ -152,8 +152,8 @@ Tombol PlatformIO di status bar bawah:
 4. Pesan dari ESP32 muncul di terminal bagian bawah. Dalam beberapa detik harus muncul kurang lebih seperti ini:
 
 ```
-=== FridgeGuard: DHT22 + Magnetic Switch + 2 LED + MQTT ===
-Kalau LED kuning & biru kedip 3x -> LED OK.
+=== FridgeGuard: DHT22 + Magnetic Switch + 2 LED + Buzzer + MQTT ===
+Kalau LED kuning & biru kedip 3x + buzzer bip 3x -> LED & buzzer OK.
 [PINTU] awal: TERTUTUP
 [WIFI] Menghubungkan ke Wokwi-GUEST ...
 [DHT22] Suhu: 24.0 C | Kelembapan: 40.0 %
@@ -173,11 +173,13 @@ Untuk menghentikan simulasi, tutup tab Wokwi-nya.
 | Yang dilakukan | Yang terjadi |
 |---|---|
 | Geser **slide switch** ke **kanan** | Pintu dianggap **terbuka**: LED kuning menyala, dashboard menampilkan "Terbuka" |
-| Biarkan terbuka lebih dari **5 detik** | Peringatan: LED kuning berkedip, dashboard menampilkan banner peringatan |
-| Geser slide switch ke **kiri** | Pintu **tertutup**: LED mati |
+| Biarkan terbuka lebih dari **5 detik** | Peringatan: LED kuning berkedip, buzzer berbunyi bip-bip, dashboard menampilkan banner peringatan |
+| Geser slide switch ke **kiri** | Pintu **tertutup**: LED dan buzzer mati |
 | Klik sensor **DHT22** saat simulasi berjalan | Muncul slider untuk mengubah suhu dan kelembapan |
 
 Slide switch di simulasi menggantikan magnetic switch pada alat asli.
+
+Buzzer di simulasi dibunyikan dengan nada 2 kHz (`tone()`), karena buzzer Wokwi butuh nada supaya bunyi. Pastikan suara laptop tidak di-mute. Di alat asli dipakai modul buzzer aktif yang cukup dinyalakan/dimatikan.
 
 Catatan: LED biru bawaan board tidak kelihatan di simulasi (board ESP32 di Wokwi tidak punya LED itu). Di alat asli LED biru tetap menyala.
 
@@ -216,6 +218,9 @@ Rangkaian alat asli:
 | Magnetic switch | kabel 1 ke D18, kabel 2 ke GND |
 | LED kuning | D19 ke resistor 220 ohm ke kaki panjang LED; kaki pendek ke GND |
 | LED biru | bawaan board (D2), tidak perlu dirangkai |
+| Modul buzzer aktif 3 pin ("Low Level Trigger") | `VCC` ke 3V3, `GND` ke GND, `I/O` ke D23 |
+
+Modul buzzer "Low Level Trigger" berbunyi kalau `I/O` diberi LOW, dan kode sudah diatur untuk itu (`BUZZER_AKTIF_LOW = true`). Kalau memakai modul yang aktif HIGH, ubah jadi `false`. Sambungkan `VCC` ke **3V3**, bukan 5V, karena pin ESP32 hanya 3.3V sehingga tidak bisa mematikan buzzer yang diberi 5V.
 
 > **Sebelum push ke GitHub:** kosongkan lagi `WIFI_SSID` dan `WIFI_PASS`, dan kembalikan `MODE_WOKWI` ke `1`. Isi repo GitHub bisa dibaca orang lain, jadi password WiFi jangan sampai ikut ter-upload.
 
@@ -233,6 +238,8 @@ Rangkaian alat asli:
 | Simulasi jalan tapi berhenti di `[WIFI] Menghubungkan...` atau MQTT gagal | Cek internet. Pastikan `MODE_WOKWI` bernilai `1`. |
 | Upload ke alat asli gagal / port tidak terdeteksi | Tutup Arduino IDE atau Serial Monitor lain yang masih terhubung ke ESP32. Pastikan driver USB **CH340** sudah terpasang dan kabel USB-nya kabel data. |
 | Alat asli tidak konek WiFi | Pastikan `MODE_WOKWI` bernilai `0`, SSID/password benar, dan WiFi-nya 2.4 GHz. |
+| Buzzer di alat asli tidak bunyi sama sekali | Cek kabel `VCC` dan `GND` modul benar-benar satu jalur dengan 3V3 dan GND ESP32 (rel breadboard kadang terputus di tengah, atau kabel masuk ke baris yang salah). Tes cepat: colok `I/O` modul langsung ke GND, harusnya bunyi. |
+| Buzzer di alat asli bunyi terus | Ubah `BUZZER_AKTIF_LOW` (lihat langkah 11) dan pastikan `VCC` modul di 3V3, bukan 5V. |
 | Data di dashboard campur aduk | Jangan menyalakan simulasi dan alat asli bersamaan, karena keduanya mengirim ke tempat yang sama. |
 
 ---
@@ -241,13 +248,13 @@ Rangkaian alat asli:
 
 Untuk yang ingin tahu cara kerjanya.
 
-**Perilaku LED**
+**Perilaku LED & buzzer**
 
-| Kondisi pintu | LED |
-|---|---|
-| Tertutup | Semua mati |
-| Terbuka sampai 5 detik | LED kuning menyala |
-| Terbuka lebih dari 5 detik | LED kuning + biru berkedip (peringatan) |
+| Kondisi pintu | LED | Buzzer |
+|---|---|---|
+| Tertutup | Semua mati | Mati |
+| Terbuka sampai 5 detik | LED kuning menyala | Mati |
+| Terbuka lebih dari 5 detik | LED kuning + biru berkedip (peringatan) | Bunyi bip-bip, ikut kedipan LED |
 
 **Pengiriman data (MQTT)**
 
@@ -264,4 +271,4 @@ Karena semua topik disimpan broker (retained), dashboard yang baru dibuka langsu
 
 **Library** (diatur di `platformio.ini`, didownload otomatis): DHT sensor library, Adafruit Unified Sensor, PubSubClient.
 
-**Satu kode untuk dua mode:** `#define MODE_WOKWI 1` memakai WiFi virtual Wokwi (`Wokwi-GUEST`); `0` memakai WiFi asli. Sisa kodenya sama persis.
+**Satu kode untuk dua mode:** `#define MODE_WOKWI 1` memakai WiFi virtual Wokwi (`Wokwi-GUEST`) dan membunyikan buzzer dengan `tone()`; `0` memakai WiFi asli dan menyalakan/mematikan modul buzzer aktif biasa. Sisa kodenya sama persis.

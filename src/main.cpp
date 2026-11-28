@@ -1,7 +1,7 @@
 // =====================================================
 // FridgeGuard - versi MQTT (kirim data ke dashboard)
 // Sensor  : DHT22 (suhu & kelembapan) + magnetic switch (pintu)
-// Aktuator: LED kuning + LED biru bawaan ESP32 (D2)
+// Aktuator: LED kuning + LED biru bawaan ESP32 (D2) + buzzer aktif (D23)
 // Library : "DHT sensor library" + "Adafruit Unified Sensor" (Adafruit)
 //           + PubSubClient (PlatformIO: otomatis dari lib_deps di platformio.ini)
 // Board   : ESP32 Dev Module | Serial Monitor: 115200
@@ -20,6 +20,11 @@
 // LED biru               : bawaan board (D2)
 //                          (board-esp32-devkit-c-v4 di Wokwi tidak punya LED ini,
 //                           jadi di simulasi tidak kelihatan; di alat asli tetap nyala)
+// Buzzer (modul 3 pin)   : VCC -> 3V3 | GND -> GND | I/O -> D23 (GPIO23)
+//                          (modul "Low Level Trigger" = aktif LOW; pakai 3V3, bukan 5V,
+//                           karena pin ESP32 cuma 3.3V jadi tidak bisa mematikan buzzer di 5V)
+//                          (Wokwi: wokwi-buzzer, pin 1 -> GND, pin 2 -> GPIO23;
+//                           dibunyikan pakai tone() karena buzzer Wokwi butuh nada)
 //
 // MQTT (broker publik HiveMQ):
 // <TOPIK>/data   -> JSON tiap 1 detik (retained: broker menyimpan data terakhir,
@@ -57,6 +62,7 @@ const uint16_t MQTT_PORT = 1883;
 #define REED_PIN  18
 #define LED_PIN   19
 #define LED_BIRU  2    // LED biru bawaan ESP32
+#define BUZZER_PIN 23  // I/O modul buzzer
 
 // Lama pintu boleh terbuka sebelum peringatan (ms)
 const unsigned long BATAS_PINTU_TERBUKA = 5000;
@@ -75,6 +81,14 @@ const unsigned long INTERVAL_DHT = 2000;
 // (ganti true hanya kalau terbaca kebalik)
 const bool REED_TERBALIK = false;
 
+// Modul buzzer "Low Level Trigger" = aktif LOW (I/O = LOW -> bunyi).
+// Kalau pakai modul aktif HIGH (buzzer bunyi terus saat pintu tertutup /
+// diam saat alarm), ganti jadi false. Hanya berlaku di alat asli.
+const bool BUZZER_AKTIF_LOW = true;
+
+// Nada buzzer di simulasi Wokwi (Hz)
+const unsigned int FREKUENSI_BUZZER_WOKWI = 2000;
+
 DHT dht(DHT_PIN, DHT_TYPE);
 WiFiClient wifiClient;
 PubSubClient mqtt(wifiClient);
@@ -89,6 +103,21 @@ unsigned long waktuCobaMqtt = 0;
 bool pintuTerbukaSebelumnya = false;
 bool alarmSebelumnya = false;
 bool wifiSebelumnya = false;
+
+void setBuzzer(bool nyala) {
+#if MODE_WOKWI
+  // Buzzer Wokwi itu piezo pasif: harus diberi nada (tone) supaya bunyi.
+  // tone() hanya dipanggil saat status berubah, bukan tiap loop.
+  static bool buzzerNyala = false;
+  if (nyala == buzzerNyala) return;
+  buzzerNyala = nyala;
+  if (nyala) tone(BUZZER_PIN, FREKUENSI_BUZZER_WOKWI);
+  else noTone(BUZZER_PIN);
+#else
+  // Buzzer aktif di alat asli: cukup dinyalakan / dimatikan
+  digitalWrite(BUZZER_PIN, (nyala != BUZZER_AKTIF_LOW) ? HIGH : LOW);
+#endif
+}
 
 bool bacaPintuTerbuka() {
   // INPUT_PULLUP: magnet dekat -> switch nyambung -> LOW -> pintu tertutup
@@ -130,6 +159,11 @@ void cekKoneksi() {
 }
 
 void setup() {
+  // Buzzer dimatikan paling awal supaya tidak bunyi saat boot
+  setBuzzer(false);
+  pinMode(BUZZER_PIN, OUTPUT);
+  setBuzzer(false);
+
   Serial.begin(115200);
   pinMode(REED_PIN, INPUT_PULLUP);
   pinMode(LED_PIN, OUTPUT);
@@ -140,14 +174,14 @@ void setup() {
 
   delay(500);
   Serial.println();
-  Serial.println("=== FridgeGuard: DHT22 + Magnetic Switch + 2 LED + MQTT ===");
+  Serial.println("=== FridgeGuard: DHT22 + Magnetic Switch + 2 LED + Buzzer + MQTT ===");
 
-  // Tes LED: kuning & biru kedip 3x saat baru nyala
+  // Tes LED & buzzer: kuning & biru kedip 3x + bip 3x saat baru nyala
   for (int i = 0; i < 3; i++) {
-    digitalWrite(LED_PIN, HIGH); digitalWrite(LED_BIRU, HIGH); delay(200);
-    digitalWrite(LED_PIN, LOW);  digitalWrite(LED_BIRU, LOW);  delay(200);
+    digitalWrite(LED_PIN, HIGH); digitalWrite(LED_BIRU, HIGH); setBuzzer(true);  delay(200);
+    digitalWrite(LED_PIN, LOW);  digitalWrite(LED_BIRU, LOW);  setBuzzer(false); delay(200);
   }
-  Serial.println("Kalau LED kuning & biru kedip 3x -> LED OK.");
+  Serial.println("Kalau LED kuning & biru kedip 3x + buzzer bip 3x -> LED & buzzer OK.");
 
   pintuTerbukaSebelumnya = bacaPintuTerbuka();
   if (pintuTerbukaSebelumnya) waktuPintuDibuka = millis();
@@ -195,27 +229,30 @@ void loop() {
   if (alarm != alarmSebelumnya) {
     alarmSebelumnya = alarm;
     if (alarm) {
-      Serial.printf("[ALARM] Pintu terbuka > %lu detik -> LED kuning + biru kedip\n", BATAS_PINTU_TERBUKA / 1000);
+      Serial.printf("[ALARM] Pintu terbuka > %lu detik -> LED kuning + biru kedip + buzzer bunyi\n", BATAS_PINTU_TERBUKA / 1000);
     } else {
       Serial.println("[ALARM] Selesai");
     }
     kirim(TOPIK "/alarm", alarm ? "ON" : "OFF", true);
   }
 
-  // ---------- LED ----------
+  // ---------- LED & buzzer ----------
   bool fasaKedip = (millis() / INTERVAL_KEDIP) % 2 == 0;
   if (!pintuTerbuka) {
     // Tertutup: semua mati
     digitalWrite(LED_PIN, LOW);
     digitalWrite(LED_BIRU, LOW);
+    setBuzzer(false);
   } else if (!alarm) {
-    // Baru dibuka: kuning nyala terus, biru mati
+    // Baru dibuka: kuning nyala terus, biru & buzzer mati
     digitalWrite(LED_PIN, HIGH);
     digitalWrite(LED_BIRU, LOW);
+    setBuzzer(false);
   } else {
-    // Peringatan: kuning & biru kedip bareng
+    // Peringatan: kuning, biru & buzzer kedip/bip bareng
     digitalWrite(LED_PIN, fasaKedip ? HIGH : LOW);
     digitalWrite(LED_BIRU, fasaKedip ? HIGH : LOW);
+    setBuzzer(fasaKedip);
   }
 
   // ---------- DHT22 tiap 2 detik ----------

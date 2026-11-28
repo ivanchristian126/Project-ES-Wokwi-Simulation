@@ -8,7 +8,8 @@
     {"type": "wokwi-dht22", "id": "dht1", "top": -18.9, "left": 167.4, "attrs": {}},
     {"type": "wokwi-led", "id": "led1", "top": 54, "left": 23.4, "attrs": {"color": "yellow"}},
     {"type": "wokwi-resistor", "id": "r1", "top": 109.55, "left": 48, "attrs": {"value": "220"}},
-    {"type": "wokwi-slide-switch", "id": "sw1", "top": 62, "left": 127.9, "attrs": {}}
+    {"type": "wokwi-slide-switch", "id": "sw1", "top": 62, "left": 127.9, "attrs": {}},
+    {"type": "wokwi-buzzer", "id": "bz1", "top": 230, "left": 405, "rotate": 180, "attrs": {}}
   ],
   "connections": [
     ["esp:TX", "$serialMonitor:RX", "", []],
@@ -71,7 +72,9 @@
     ["esp:TX", "bb1:59b.i", "", ["$bb"]],
     ["esp:22", "bb1:60b.i", "", ["$bb"]],
     ["esp:23", "bb1:61b.i", "", ["$bb"]],
-    ["esp:GND.2", "bb1:62b.i", "", ["$bb"]]
+    ["esp:GND.2", "bb1:62b.i", "", ["$bb"]],
+    ["bz1:2", "bb1:61b.j", "purple", []],
+    ["bz1:1", "bb1:bn.49", "black", []]
   ],
   "dependencies": {}
 }
